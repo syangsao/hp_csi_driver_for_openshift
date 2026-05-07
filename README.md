@@ -420,7 +420,10 @@ data:
     hpe3parDisableAutoSpaceReclaim: true
 ```
 
-> Replace values with your actual storage array configuration. See the [SCOD docs](https://scod.hpedev.io/csi_driver/using/hpe_alletra_storage_mp_b10000_alletra_9000_primera_and_3par/) for your specific array type.
+> Replace values with your actual storage array configuration. See the [SCOD docs](https://scod.hpedev.io/csi_driver/container_storage_provider/) for your specific array type:
+> - [Alletra Storage MP B10000, Alletra 9000, Primera, 3PAR](https://scod.hpedev.io/csi_driver/container_storage_provider/hpe_alletra_storage_mp_b10000/index.html)
+> - [Alletra 5000/6000 & Nimble](https://scod.hpedev.io/csi_driver/container_storage_provider/hpe_alletra_6000/index.html)
+> - [Alletra Storage MP B10000 File Service](https://scod.hpedev.io/csi_driver/container_storage_provider/hpe_alletra_storage_mp_b10000_file_service/index.html)
 
 ---
 
