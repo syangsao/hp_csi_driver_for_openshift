@@ -434,7 +434,7 @@ This section covers the specific configuration steps for connecting an HPE Allet
 
 ### Platform Requirements
 
-- **Array firmware**: HPE Primera OS (check the [compatibility table](https://scod.hpedev.io/csi_driver/overview/compatibility/index.html) for your CSI driver version)
+- **Array firmware**: HPE Primera OS (check the [compatibility table](https://scod.hpedev.io/csi_driver/index.html#compatibility-and-support) for your CSI driver version)
 - **User role**: `edit` or `super` on the storage array (`edit` is recommended for security best practices)
 - **LDAP accounts**: Supported from HPE CSI Driver v2.5.2 onwards
 
