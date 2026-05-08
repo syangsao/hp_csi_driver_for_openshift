@@ -522,6 +522,42 @@ Apply:
 oc apply -f hpe-linux-config.yaml
 ```
 
+### Step 2b: Verify iSCSI Initiators (iSCSI deployments only)
+
+The CSI driver auto-discovers iSCSI initiators on each worker node and creates hosts on the B10000 automatically. Before proceeding, verify each node has a valid initiator name:
+
+```bash
+# List all worker nodes
+oc get nodes -l node-role.kubernetes.io/worker -o name
+
+# Check the iSCSI initiator name on each worker node
+oc debug node/<worker-node-name> -- chroot /host cat /etc/iscsi/initiatorname.iscsi
+# Example output: InitiatorName=iqn.2019-08.com.redhat:xxxx
+
+# Alternatively, check HPENodeInfos after the CSI driver is running
+oc get hpenodeinfo -n hpe-storage -o custom-columns='NODE:.metadata.name,INITIATOR:.spec.record.InitiatorNames'
+```
+
+**If a node shows no initiator name or a blank file:**
+
+```bash
+# Inside the debug pod chroot:
+yum install -y iscsi-initiator-utils
+service iscsid start
+cat /etc/iscsi/initiatorname.iscsi
+```
+
+**When manual host creation IS required:**
+- Using **Virtual Domains** — hosts must be created manually on the array (see SCOD docs for [Virtual Domains steps](https://scod.hpedev.io/csi_driver/container_storage_provider/hpe_alletra_storage_mp_b10000/index.html#virtual-domains))
+- Using `disableHostDeletion: true` in HPECSIDriver — prevents the driver from deleting hosts on the array
+- Using storage array security policies that restrict API host creation
+
+For Virtual Domains, manually create hosts via the B10000 CLI:
+```bash
+cli% createhost -sn iqn-<hostname> -domain <domain-name> iqn.2019-08.com.redhat:xxxx
+```
+> **Note:** From CSI Driver v3.0.0+, hostnames must be prefixed with the protocol (`iqn-` for iSCSI, `nqntcp-` for NVMe/TCP, `wwn-` for FC). Total length must not exceed 27 characters.
+
 ### Step 3: Create the B10000 StorageClass
 
 ```yaml
