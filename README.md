@@ -8,8 +8,9 @@
 5. [Install the HPE CSI Operator](#install-the-hpe-csi-operator)
 6. [Create the HPECSIDriver Instance](#create-the-hpecsidriver-instance)
 7. [Add an HPE Storage Backend](#add-an-hpe-storage-backend)
-8. [Create a StorageClass](#create-a-storageclass)
-9. [Troubleshooting](#troubleshooting)
+8. [Configuring HPE Alletra Storage MP B10000](#configuring-hpe-alletra-storage-mp-b10000)
+9. [Create a StorageClass](#create-a-storageclass)
+10. [Troubleshooting](#troubleshooting)
 
 ---
 
@@ -424,6 +425,209 @@ data:
 > - [Alletra Storage MP B10000, Alletra 9000, Primera, 3PAR](https://scod.hpedev.io/csi_driver/container_storage_provider/hpe_alletra_storage_mp_b10000/index.html)
 > - [Alletra 5000/6000 & Nimble](https://scod.hpedev.io/csi_driver/container_storage_provider/hpe_alletra_6000/index.html)
 > - [Alletra Storage MP B10000 File Service](https://scod.hpedev.io/csi_driver/container_storage_provider/hpe_alletra_storage_mp_b10000_file_service/index.html)
+
+---
+
+## Configuring HPE Alletra Storage MP B10000
+
+This section covers the specific configuration steps for connecting an HPE Alletra Storage MP B10000 array to OpenShift.
+
+### Platform Requirements
+
+- **Array firmware**: HPE Primera OS (check the [compatibility table](https://scod.hpedev.io/csi_driver/overview/compatibility/index.html) for your CSI driver version)
+- **User role**: `edit` or `super` on the storage array (`edit` is recommended for security best practices)
+- **LDAP accounts**: Supported from HPE CSI Driver v2.5.2 onwards
+
+### Network Port Requirements
+
+Ensure the following TCP ports are open inbound from Kubernetes worker nodes to the B10000 array:
+
+| Port  | Protocol | Description |
+|-------|----------|-------------|
+| 443   | HTTPS    | WSAPI (management API) |
+| 3260  | TCP      | iSCSI Target |
+| 445   | TCP      | SMB (NFS via B10000 File Service) |
+
+> **Note:** NVMe/TCP requires port 4443 open on the array. FC requires no additional ports beyond the fabric.
+
+### Data Path Protocols
+
+The B10000 supports multiple access protocols. Choose one when creating your StorageClass:
+
+| Protocol   | IPv6 Support | Peer Persistence | Notes |
+|------------|-------------|-------------------|-------|
+| iSCSI      | Yes         | Yes               | Requires multipathd (see above) |
+| FC         | N/A         | Yes               | Requires Fibre Channel HBAs |
+| NVMe/TCP   | No          | No                | B10000 only |
+| NFS        | No          | No                | B10000 only (uses File Service CSP) |
+
+### Step 1: Create the B10000 Backend Secret
+
+```bash
+oc create secret generic hpe-backend \
+  --from-literal=serviceName="alletrastoragemp-csp-svc" \
+  --from-literal=servicePort="8080" \
+  --from-literal=backend="192.168.1.110:443" \
+  --from-literal=username="3paradm" \
+  --from-literal=password="your_password" \
+  -n hpe-storage
+```
+
+**Key differences from other platforms:**
+- `serviceName` is `alletrastoragemp-csp-svc` (not `alletra6000-csp-svc` or `alletra9000-csp-svc`)
+- `backend` includes `:443` suffix (required for B10000, Alletra 9000, and Primera from v2.5.2 onwards)
+- `username` uses the array account name (not necessarily `admin`)
+
+### Step 2: Create the B10000 Backend ConfigMap
+
+```yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: hpe-linux-config
+  namespace: hpe-storage
+data:
+  hpe-alletra-storage-mp-config-1.yaml: |
+    ---
+    hpeAlletraStorageMPCredentialsSecretName: hpe-backend
+    hpeAlletraStorageMpCssEnabled: true
+    hpeAlletraStorageMpNasHostname: ""
+    hpeAlletraStorageMpCpgName: default
+    hpeAlletraStorageMpFcEnabled: false
+    hpeAlletraStorageMpIscsiEnabled: true
+    hpeAlletraStorageMpIscsiInitiatorName: ""
+    hpeAlletraStorageMpSnmpReadOnlyToken: ""
+    hpeAlletraStorageMpTimeout: 0
+    hpeAlletraStorageMpFlashCache: false
+    hpeAlletraStorageMpFlashCacheMode: ""
+    hpeAlletraStorageMpHostVolPrefix: "k8s-"
+    hpeAlletraStorageMpSnapThrottling: 0
+    hpeAlletraStorageMpMaxSnapshots: 0
+    hpeAlletraStorageMpSyncPeriodInHours: 1
+    hpeAlletraStorageMpUseRasAPI: false
+    hpeAlletraStorageMpApiVn: 1
+    hpeAlletraStorageMpDisableAutoSpaceReclaim: true
+    hpeAlletraStorageMpNvmeTcpEnabled: false
+```
+
+> Replace values with your actual configuration:
+> - `hpeAlletraStorageMpCpgName`: Set to your CPG name (or `default` to auto-select)
+> - `hpeAlletraStorageMpIscsiEnabled`: Set to `true` for iSCSI, `false` otherwise
+> - `hpeAlletraStorageMpFcEnabled`: Set to `true` if using Fibre Channel
+> - `hpeAlletraStorageMpNvmeTcpEnabled`: Set to `true` if using NVMe/TCP
+
+Apply:
+
+```bash
+oc apply -f hpe-linux-config.yaml
+```
+
+### Step 3: Create the B10000 StorageClass
+
+```yaml
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  annotations:
+    storageclass.kubernetes.io/is-default-class: "true"
+  name: hpe-standard
+parameters:
+  csi.storage.k8s.io/controller-expand-secret-name: hpe-backend
+  csi.storage.k8s.io/controller-expand-secret-namespace: hpe-storage
+  csi.storage.k8s.io/controller-publish-secret-name: hpe-backend
+  csi.storage.k8s.io/controller-publish-secret-namespace: hpe-storage
+  csi.storage.k8s.io/node-publish-secret-name: hpe-backend
+  csi.storage.k8s.io/node-publish-secret-namespace: hpe-storage
+  csi.storage.k8s.io/node-stage-secret-name: hpe-backend
+  csi.storage.k8s.io/node-stage-secret-namespace: hpe-storage
+  csi.storage.k8s.io/provisioner-secret-name: hpe-backend
+  csi.storage.k8s.io/provisioner-secret-namespace: hpe-storage
+  csi.storage.k8s.io/fstype: xfs
+  accessProtocol: iscsi
+  description: Volume created by the HPE CSI Driver for Kubernetes
+  cpg: SSD_r6
+  snapCpg: SSD_r6
+  hostSeesVLUN: "true"
+  provisioningType: tpvv
+provisioner: csi.hpe.com
+reclaimPolicy: Delete
+volumeBindingMode: Immediate
+allowVolumeExpansion: true
+```
+
+**StorageClass parameters explained:**
+
+| Parameter | Value | Description |
+|-----------|-------|-------------|
+| `accessProtocol` | `iscsi`, `fc`, `nvmetcp` | Data path protocol (case-sensitive) |
+| `cpg` | CPG name | Storage CPG for volume provisioning |
+| `snapCpg` | CPG name | CPG for snapshots (defaults to `cpg` if omitted) |
+| `provisioningType` | `tpvv`, `full`, `dedup`, `reduce` | Volume type (default: `tpvv` = thin provisioned) |
+| `hostSeesVLUN` | `true` or `false` | VLUN template: `true` = "host sees" (recommended), `false` = "matched set" |
+| `fcPortsList` | Comma-separated | FC port list (e.g., `"0:5:1,1:4:2"`) — defaults to all ports |
+| `iscsiPortalIps` | Comma-separated | iSCSI portal IPs — defaults to all portals |
+| `qosName` | Volume set name | Apply QoS rules from a volume set |
+
+Apply:
+
+```bash
+oc apply -f storageclass.yaml
+```
+
+### Step 4: Verify B10000 Connectivity
+
+```bash
+# Check CSP pod is running
+oc get pods -n hpe-storage | grep alletrastoragemp
+
+# Check HPENodeInfos are created
+oc get hpenodeinfo -n hpe-storage
+
+# Verify StorageClass
+oc get sc hpe-standard
+
+# Test provisioning
+oc apply -f - <<'EOF'
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: test-b10000-pvc
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: hpe-standard
+  resources:
+    requests:
+      storage: 10Gi
+EOF
+
+oc get pvc test-b10000-pvc
+```
+
+### HPECSIDriver Configuration for B10000 Only
+
+If you're only using B10000 and no other HPE arrays, disable the other CSPs in your HPECSIDriver:
+
+```yaml
+spec:
+  disable:
+    alletra6000: true     # Disable if not using Alletra 5000/6000
+    alletra9000: true     # Disable if not using Alletra 9000
+    nimble: true          # Disable if not using Nimble
+    primera: true         # Disable if not using Primera
+    alletraStorageMP: false   # Keep enabled for B10000
+    b10000FileService: true   # Disable unless using File Service
+```
+
+### Known Limitations
+
+- **VolumeAttachments per node**: Tested up to 250 with iSCSI. HPE recommends ≤200 per node. Default limit is 100 — increase via `maxVolumesPerNode`.
+- **Node hostnames**: Must not exceed 27 characters. From v3.0.0+, hostnames are prefixed with the protocol (`iqn-`, `nqntcp-`, `wwn-`).
+- **IPv6**: Only supported for iSCSI and API endpoint access. Not supported for NVMe/TCP, NFS, or replication.
+- **Inline ephemeral volumes**: Not supported.
+- **Protocol migration**: Migrating PersistentVolumes between protocols is discouraged until further notice.
+
+> **Reference:** [HPE Alletra Storage MP B10000 CSP Documentation](https://scod.hpedev.io/csi_driver/container_storage_provider/hpe_alletra_storage_mp_b10000/index.html)
 
 ---
 
