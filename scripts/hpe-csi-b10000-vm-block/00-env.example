@@ -1,0 +1,29 @@
+# Copy this file to 00-env, update the values, then source it:
+#   source scripts/hpe-csi-b10000-vm-block/00-env
+
+export HPE_CSI_NAMESPACE="hpe-storage"
+export HPE_OPERATOR_VERSION="3.1.0"
+
+# HPE Alletra Storage MP B10000 backend.
+# For B10000 block backends using IPv4, include :443.
+export B10000_MGMT_ENDPOINT="192.0.2.110:443"
+export B10000_USERNAME="3paradm"
+export B10000_PASSWORD="REPLACE_ME"
+export B10000_BACKEND_SECRET="hpe-b10000-backend"
+
+# B10000 provisioning settings.
+export B10000_CPG="SSD_r6"
+export B10000_SNAP_CPG="SSD_r6"
+export B10000_ACCESS_PROTOCOL="iscsi"
+export B10000_PROVISIONING_TYPE="tpvv"
+export B10000_HOST_SEES_VLUN="true"
+
+# OpenShift Virtualization storage objects.
+export HPE_VM_BLOCK_STORAGECLASS="hpe-b10000-vm-block"
+export MAKE_DEFAULT_STORAGECLASS="false"
+
+# Verification PVC.
+export TEST_NAMESPACE="hpe-csi-test"
+export TEST_PVC_NAME="hpe-b10000-vm-block-test"
+export TEST_PVC_SIZE="10Gi"
+export DELETE_TEST_RESOURCES="false"
