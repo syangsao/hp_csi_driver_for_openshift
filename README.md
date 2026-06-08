@@ -7,10 +7,11 @@
 4. [Apply SecurityContextConstraints (SCC)](#apply-securitycontextconstraints-scc)
 5. [Install the HPE CSI Operator](#install-the-hpe-csi-operator)
 6. [Create the HPECSIDriver Instance](#create-the-hpecsidriver-instance)
-7. [Add an HPE Storage Backend](#add-an-hpe-storage-backend)
-8. [Configuring HPE Alletra Storage MP B10000](#configuring-hpe-alletra-storage-mp-b10000)
-9. [Create a StorageClass](#create-a-storageclass)
-10. [Troubleshooting](#troubleshooting)
+7. [Deploying on Infra Nodes](#deploying-on-infra-nodes)
+8. [Add an HPE Storage Backend](#add-an-hpe-storage-backend)
+9. [Configuring HPE Alletra Storage MP B10000](#configuring-hpe-alletra-storage-mp-b10000)
+10. [Create a StorageClass](#create-a-storageclass)
+11. [Troubleshooting](#troubleshooting)
 
 ---
 
@@ -245,6 +246,42 @@ spec:
   logLevel: info
   maxVolumesPerNode: 100
 ```
+
+### Deploying on Infra Nodes
+
+By default, the HPE CSI Driver node daemonset pods will not schedule on nodes with `NoSchedule` taints (such as infra nodes). To allow the driver to run on infra nodes or nodes with custom taints, add tolerations to the `HPECSIDriver` spec.
+
+**Option 1: Patch an existing HPECSIDriver instance**
+
+```bash
+oc patch hpecsidriver <DRIVER_NAME> -n hpe-storage --type='merge' -p '{"spec":{"node":{"tolerations":[{"effect":"NoSchedule","key":"node-role.kubernetes.io/infra","operator":"Exists"},{"effect":"NoSchedule","key":"csi.hpe.com/hpe-nfs","operator":"Exists"}]}}}'
+```
+
+**Option 2: Include tolerations in the HPECSIDriver YAML**
+
+```yaml
+apiVersion: storage.hpe.com/v1
+kind: HPECSIDriver
+metadata:
+  name: <DRIVER_NAME>
+  namespace: hpe-storage
+spec:
+  node:
+    tolerations:
+      - effect: NoSchedule
+        key: node-role.kubernetes.io/infra
+        operator: Exists
+      - effect: NoSchedule
+        key: csi.hpe.com/hpe-nfs
+        operator: Exists
+```
+
+This adds two tolerations to the HPE CSI Driver's node daemonset pods:
+
+- `node-role.kubernetes.io/infra=NoSchedule` — allows pods to run on infra nodes
+- `csi.hpe.com/hpe-nfs=NoSchedule` — allows pods to run on nodes tainted with the custom `csi.hpe.com/hpe-nfs` taint
+
+Both use `operator: Exists`, so they tolerate the taint regardless of the value.
 
 ---
 
